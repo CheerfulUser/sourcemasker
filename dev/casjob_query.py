@@ -26,7 +26,6 @@ class CASjobs_sources(object):
             name of the database that will be used to save on casjobs and locally 
         path : str
             path to the save directory 
-
     """
     
     def __init__(self,info,maglim=20,band='i',context='ps1', name = None):
@@ -132,6 +131,15 @@ class CASjobs_sources(object):
         jobs = mastcasjobs.MastCasJobs(context=c)
         if reset:
             jobs.drop_table_if_exists(self.name)
+        else:
+            try:
+                self.table = jobs.get_table(self.name,format='CSV').to_pandas()
+                if self.context == 'ps1':
+                    self.table = self.table.replace(-999,np.nan)
+                print('loading existing table')
+                return 
+            except:
+                pass
 
         job_id = jobs.submit(self.query)
         status = jobs.monitor(job_id)
@@ -139,6 +147,10 @@ class CASjobs_sources(object):
         if status[0] != 5:
             raise ValueError('No table created')
         self.table = jobs.get_table(self.name,format='CSV').to_pandas()
+
+        if self.context == 'ps1':
+            self.table = self.table.replace(-999,np.nan)
+        
         return 
 
     def save_space(self):
@@ -159,13 +171,13 @@ class CASjobs_sources(object):
         self.save_space()
         self.table.to_csv(save, index = False)
 
-    def get_table(self,save=None):
+    def get_table(self,reset=True,save=None):
         """
         Runs all functions to get the table.
         """
         self.get_coords()
         self.get_query()
-        self.submit_query()
+        self.submit_query(reset=reset)
         if save is not None:
             self.save_table(save)
         return
