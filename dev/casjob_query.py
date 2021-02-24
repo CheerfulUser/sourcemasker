@@ -1,15 +1,40 @@
 from astropy.wcs import WCS
+from astropy.wcs.wcs import WCS as wcs_class
+from astropy.io.fits.header import Header as header_class
 import mastcasjobs
 import pandas as pd
+import numpy as np
 
 class CASjobs_sources(object):
+    """
+    Query an entire image region for sources, on casjobs. Takes the image WCS to calculate
+    image bounds and search area.
+
+    Inputs
+    ------
+        info : wcs/str/header
+            the wcs, file name, or header for the image to query the region of.
+    Options
+    -------
+        maglim : float
+            magnitude limit of the query 
+        band : str
+            ps1 band to do the magnitude cut 
+        context : str
+            casjobs query context, currently only ps1 and gaia are avaialble 
+        name : str
+            name of the database that will be used to save on casjobs and locally 
+        path : str
+            path to the save directory 
+
+    """
     
-    def __init__(self,info,maglim=20,band='i',context='ps1', name = None, path=None):
+    def __init__(self,info,maglim=20,band='i',context='ps1', name = None):
         if type(info) == str:
             self.wcs = WCS(info)
-        elif type(info) == astropy.wcs.wcs.WCS:
+        elif type(info) == wcs_class:
             self.wcs = info
-        elif type(info) == astropy.io.fits.header.Header:
+        elif type(info) == header_class:
             self.wcs = WCS(info)
         self.ra = None
         self.dec = None
@@ -20,38 +45,43 @@ class CASjobs_sources(object):
         self.band = band
         self.table = None
         self.query = None
-        if path is None:
-            self.path = './'
-        else:
-            self.path = path
         
     def get_coords(self):
-        image  = np.zeros(self.wcs.array_shape)
-        centre = [image.shape[1]//2,image.shape[0]//2]
-        self.ra, self.dec = wcs.all_pix2world(centre[0],centre[1],0)
+        """
+        Get the centre coordinates and query radius from the wcs 
+        """
+        dim1, dim2  = self.wcs.array_shape
+        centre = [dim1//2,dim2//2]
+        self.ra, self.dec = self.wcs.all_pix2world(centre[0],centre[1],0)
         
-        size = np.sqrt((image.shape[1]-centre[0])**2 + (image.shape[0]-centre[1])**2) + 5
+        size = np.sqrt((dim1-centre[0])**2 + (dim2-centre[1])**2) + 5
         pix_size = np.max(abs(self.wcs.pixel_scale_matrix))
         self.rad = size * pix_size * 60 # size in arc minutes
         return 
     
     def _check_params(self):
+        """
+        Check all relevant variables are defined
+        """
         m = ''
-        message = "\n {} not defined."
+        message = "\n {} not defined"
         if self.name is None:
-            print(message.format(name) + 'assigning default name.')
+            print(message.format('name') + ' assigning default name.')
             self.name = 'default'
         if self.ra is None:
-            m += message.format(ra)
+            m += message.format('ra')
         if self.dec is None:
-            m += message.format(dec)
+            m += message.format('dec')
         if self.rad is None:
-            m += message.format(rad)
+            m += message.format('rad')
         if len(m) > 2:
             raise ValueError(m)
         return
     
     def get_query(self):
+        """
+        Get the query string to submit to casjobs
+        """
         
         self._check_params()
         
@@ -81,12 +111,15 @@ class CASjobs_sources(object):
                          WHERE T.phot_g_mean_mag < {maglim}
                          """
             self.name = 'gaia_'+self.name
-            self.query = ps1_query.format(dbname='gaia_'+self.name,ra=self.ra,
+            self.query = gaia_query.format(dbname=self.name,ra=self.ra,
                               dec=self.dec,rad=self.rad,
                               band=self.band,maglim=self.maglim)
         return 
     
     def submit_query(self,reset= True):
+        """
+        Submit the query and download the resulting table
+        """
         if self.context == 'ps1':
             c = 'PanSTARRS_DR2'
 
@@ -96,7 +129,6 @@ class CASjobs_sources(object):
         else:
             raise ValueError('Only gaia and ps1 available now.')
 
-
         jobs = mastcasjobs.MastCasJobs(context=c)
         if reset:
             jobs.drop_table_if_exists(self.name)
@@ -104,12 +136,14 @@ class CASjobs_sources(object):
         job_id = jobs.submit(self.query)
         status = jobs.monitor(job_id)
         print(status)
-        self.table = jobs.get_table('tester_footprint',format='CSV').to_pandas()
+        if status[0] != 5:
+            raise ValueError('No table created')
+        self.table = jobs.get_table(self.name,format='CSV').to_pandas()
         return 
 
     def save_space(self):
         """
-        Creates a pathm if it doesn't already exist.
+        Creates a path if it doesn't already exist.
         """
         try:
             if not os.path.exists(self.path):
@@ -118,16 +152,22 @@ class CASjobs_sources(object):
             pass
         return
 
-    def save_table(self):
+    def save_table(self,save):
+        """
+        Save the query output 
+        """
         self.save_space()
-        self.table.to_csv(self.path+self.name + '.csv', index = False)
+        self.table.to_csv(save, index = False)
 
     def get_table(self,save=None):
+        """
+        Runs all functions to get the table.
+        """
         self.get_coords()
         self.get_query()
         self.submit_query()
         if save is not None:
-            self.save_table()
+            self.save_table(save)
         return
 
 
