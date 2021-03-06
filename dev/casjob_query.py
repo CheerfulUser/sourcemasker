@@ -152,7 +152,7 @@ class CASjobs_sources(object):
         print(status)
         if status[0] != 5:
             raise ValueError('No table created')
-        self.table = jobs.get_table(self.name+'.csv',format='CSV').to_pandas()
+        self.table = jobs.get_table(self.name,format='CSV').to_pandas()
 
         if self.context == 'ps1':
             self.table = self.table.replace(-999,np.nan)
@@ -175,7 +175,7 @@ class CASjobs_sources(object):
         Save the query output 
         """
         self.save_space()
-        self.table.to_csv(save, index = False)
+        self.table.to_csv(save + '.csv', index = False)
 
     def get_table(self,reset=True,save=None):
         """
