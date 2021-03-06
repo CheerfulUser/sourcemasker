@@ -4,6 +4,7 @@ from astropy.io.fits.header import Header as header_class
 import mastcasjobs
 import pandas as pd
 import numpy as np
+import os
 
 class CASjobs_sources(object):
     """
@@ -19,7 +20,7 @@ class CASjobs_sources(object):
         maglim : float
             magnitude limit of the query 
         band : str
-            ps1 band to do the magnitude cut 
+            ps1 band to do the magnitude cut, doesn't matter for gaia
         context : str
             casjobs query context, currently only ps1 and gaia are avaialble 
         name : str
@@ -28,34 +29,39 @@ class CASjobs_sources(object):
             path to the save directory 
     """
     
-    def __init__(self,info,maglim=20,band='i',context='ps1', name = None):
-        if type(info) == str:
-            self.wcs = WCS(info)
-        elif type(info) == wcs_class:
-            self.wcs = info
-        elif type(info) == header_class:
-            self.wcs = WCS(info)
-        self.ra = None
-        self.dec = None
-        self.rad = None
+    def __init__(self,info=None,ra=None,dec=None,rad=None,maglim=20,band='i',context='ps1', name = None,path='./'):
+        if info is not None:
+            if type(info) == str:
+                self.wcs = WCS(info)
+            elif type(info) == wcs_class:
+                self.wcs = info
+            elif type(info) == header_class:
+                self.wcs = WCS(info)
+        elif (ra is None) | (dec is None) | (rad is None):
+            raise ValueError('if no wcs info is provided then ra, dec and rad MUST be provided.')
+        self.ra = ra
+        self.dec = dec
+        self.rad = rad
         self.context = context
         self.name = name
         self.maglim = maglim
         self.band = band
         self.table = None
         self.query = None
+        self.path = path
         
     def get_coords(self):
         """
         Get the centre coordinates and query radius from the wcs 
         """
-        dim1, dim2  = self.wcs.array_shape
-        centre = [dim1//2,dim2//2]
-        self.ra, self.dec = self.wcs.all_pix2world(centre[0],centre[1],0)
-        
-        size = np.sqrt((dim1-centre[0])**2 + (dim2-centre[1])**2) + 5
-        pix_size = np.max(abs(self.wcs.pixel_scale_matrix))
-        self.rad = size * pix_size * 60 # size in arc minutes
+        if (self.ra is None) | (self.dec is None) | (self.rad is None):
+            dim1, dim2  = self.wcs.array_shape
+            centre = [dim1//2,dim2//2]
+            self.ra, self.dec = self.wcs.all_pix2world(centre[0],centre[1],0)
+            
+            size = np.sqrt((dim1-centre[0])**2 + (dim2-centre[1])**2) + 50
+            pix_size = np.max(abs(self.wcs.pixel_scale_matrix))
+            self.rad = size * pix_size * 60 # size in arc minutes
         return 
     
     def _check_params(self):
@@ -146,7 +152,7 @@ class CASjobs_sources(object):
         print(status)
         if status[0] != 5:
             raise ValueError('No table created')
-        self.table = jobs.get_table(self.name,format='CSV').to_pandas()
+        self.table = jobs.get_table(self.name+'.csv',format='CSV').to_pandas()
 
         if self.context == 'ps1':
             self.table = self.table.replace(-999,np.nan)
@@ -175,11 +181,13 @@ class CASjobs_sources(object):
         """
         Runs all functions to get the table.
         """
+        if save is not None:
+            self.name = save
         self.get_coords()
         self.get_query()
         self.submit_query(reset=reset)
         if save is not None:
-            self.save_table(save)
+            self.save_table(self.name)
         return
 
 
