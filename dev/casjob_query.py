@@ -177,7 +177,7 @@ class CASjobs_sources(object):
         self.save_space()
         self.table.to_csv(save + '.csv', index = False)
 
-    def get_table(self,reset=True,save=None):
+    def get_table(self,reset=False,save=None):
         """
         Runs all functions to get the table.
         """
